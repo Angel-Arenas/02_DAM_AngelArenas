@@ -1,0 +1,94 @@
+services:
+  frontend:
+    image: jazett/frontend-project:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - BACKEND_URL=http://backend:8085
+      - ANGULAR_API_URL=
+    networks:
+      - red-app
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        order: start-first
+
+  backend:
+    image: jazett/backend-project:latest
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      - PORT=8085
+      - TZ=America/Lima
+      - DATABASE_URL=jdbc:sqlserver://sqlserver-db:1433;databaseName=BodegaPeiranoDBF;encrypt=false;trustServerCertificate=true
+      - DATABASE_USERNAME=sa
+      - DATABASE_PASSWORD=Angel12345!
+      - DATABASE_DRIVER=com.microsoft.sqlserver.jdbc.SQLServerDriver
+    networks:
+      red-app:
+        aliases:
+          - springboot-sqlserver
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 15s
+        max_attempts: 20
+        window: 300s
+    depends_on:
+      - db-init
+
+  db-init:
+    image: mcr.microsoft.com/mssql-tools
+    networks:
+      - red-app
+    entrypoint: >
+      /bin/bash -c '
+      until /opt/mssql-tools/bin/sqlcmd -S sqlserver-db -U sa -P "Angel12345!" -Q "SELECT 1" &> /dev/null; do
+        echo "Esperando a SQL Server...";
+        sleep 5;
+      done;
+      /opt/mssql-tools/bin/sqlcmd -S sqlserver-db -U sa -P "Angel12345!" -Q "
+        IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = '\''BodegaPeiranoDBF'\'')
+        CREATE DATABASE BodegaPeiranoDBF;
+      ";
+      echo "Base de datos lista.";
+      '
+    deploy:
+      restart_policy:
+        condition: none
+    depends_on:
+      - sqlserver-db
+
+  sqlserver-db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    ports:
+      - "1433:1433"
+    environment:
+      - SA_PASSWORD=Angel12345!
+      - ACCEPT_EULA=Y
+      - MSSQL_PID=Express
+      - MSSQL_MEMORY_LIMIT_MB=2048
+    volumes:
+      - db-data:/var/opt/mssql
+    networks:
+      - red-app
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 2.5G
+
+networks:
+  red-app:
+    driver: overlay
+
+volumes:
+  db-data:
